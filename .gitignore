@@ -1,0 +1,25 @@
+# Zig
+zig-pkg/
+.zig-cache/
+zig-cache/
+zig-out/
+
+# Blender
+*.blend1
+*.blend2
+
+# Videos
+*.mp4
+*.mov
+*.mkv
+*.avi
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
