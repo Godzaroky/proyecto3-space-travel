@@ -29,15 +29,17 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 | Mouse | Rotar cámara (yaw / pitch) |
 | W / A / S / D | Mover cámara |
 | Espacio / Ctrl | Subir / bajar |
+| Shift | Moverse más rápido |
+| Tab | Liberar / capturar el mouse |
 | 1 – 9 | Viajar rápido a un cuerpo celeste |
 | Esc | Salir |
 
 ## Funcionalidades
 
-- [ ] Framebuffer propio y presentación por pixel
-- [ ] Pipeline de rasterización con z-buffer
-- [ ] Back-face culling
-- [ ] Cámara con movimiento 3D
+- [x] Framebuffer propio y presentación por pixel
+- [x] Pipeline de rasterización con z-buffer
+- [x] Back-face culling
+- [x] Cámara con movimiento 3D
 - [ ] Sol y planetas orbitando
 - [ ] Lunas
 - [ ] Texturas por cuerpo celeste
