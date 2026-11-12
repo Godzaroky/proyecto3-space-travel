@@ -7,8 +7,18 @@ const Mat4 = math.Mat4;
 
 pub const Mesh = struct {
     positions: []const rl.Vector3,
-    colors: []const rl.Vector3,
+    normals: []const rl.Vector3,
+    uvs: []const rl.Vector2,
+    colors: []const rl.Vector3, // temporal, para depurar
     indices: []const [3]u32,
+
+    pub fn deinit(self: *Mesh, allocator: std.mem.Allocator) void {
+        allocator.free(self.positions);
+        allocator.free(self.normals);
+        allocator.free(self.uvs);
+        allocator.free(self.colors);
+        allocator.free(self.indices);
+    }
 };
 
 // vértice en clip space antes del divide

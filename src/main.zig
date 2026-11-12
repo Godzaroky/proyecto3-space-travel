@@ -1,62 +1,40 @@
 const std = @import("std");
 const rl = @import("raylib");
-const builtin = @import("builtin");
 const Framebuffer = @import("framebuffer.zig").Framebuffer;
 const math = @import("math.zig");
 const render = @import("render.zig");
+const mesh = @import("mesh.zig");
+const obj = @import("obj.zig");
 const Camera = @import("camera.zig").Camera;
 const Mat4 = math.Mat4;
 
 const windowWidth = 800;
 const windowHeight = 600;
 
-var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
-
-// cubo de prueba
-const cube_vertices = [8]rl.Vector3{
-    .{ .x = -1, .y = -1, .z = -1 },
-    .{ .x = 1, .y = -1, .z = -1 },
-    .{ .x = 1, .y = 1, .z = -1 },
-    .{ .x = -1, .y = 1, .z = -1 },
-    .{ .x = -1, .y = -1, .z = 1 },
-    .{ .x = 1, .y = -1, .z = 1 },
-    .{ .x = 1, .y = 1, .z = 1 },
-    .{ .x = -1, .y = 1, .z = 1 },
+// escena de prueba de la fase 4 (generada con asistencia de IA)
+const Fit = struct {
+    center: rl.Vector3,
+    scale: f32,
 };
 
-const cube_indices = [12][3]u32{
-    .{ 4, 5, 6 }, .{ 4, 6, 7 }, // +Z
-    .{ 1, 0, 3 }, .{ 1, 3, 2 }, // -Z
-    .{ 5, 1, 2 }, .{ 5, 2, 6 }, // +X
-    .{ 0, 4, 7 }, .{ 0, 7, 3 }, // -X
-    .{ 7, 6, 2 }, .{ 7, 2, 3 }, // +Y
-    .{ 0, 1, 5 }, .{ 0, 5, 4 }, // -Y
-};
-
-// cubo RGB
-const cube_colors = [8]rl.Vector3{
-    .{ .x = 1, .y = 0, .z = 0 },
-    .{ .x = 0, .y = 1, .z = 0 },
-    .{ .x = 0, .y = 0, .z = 1 },
-    .{ .x = 1, .y = 1, .z = 0 },
-    .{ .x = 1, .y = 0, .z = 1 },
-    .{ .x = 0, .y = 1, .z = 1 },
-    .{ .x = 1, .y = 1, .z = 1 },
-    .{ .x = 0.5, .y = 0.5, .z = 0.5 },
-};
-
-// escena de prueba: cuadrícula de cubos (generada con asistencia de IA)
-const grid_half = 3;
-const grid_spacing = 6.0;
-
-pub fn main() !void {
-    const gpa, const is_debug = switch (builtin.mode) {
-        .Debug, .ReleaseSafe => .{ debug_allocator.allocator(), true },
-        .ReleaseFast, .ReleaseSmall => .{ std.heap.smp_allocator, false },
+fn fitToSize(positions: []const rl.Vector3, size: f32) Fit {
+    var lo = positions[0];
+    var hi = positions[0];
+    for (positions) |p| {
+        lo = lo.min(p);
+        hi = hi.max(p);
+    }
+    const extent = hi.subtract(lo);
+    const largest = @max(extent.x, extent.y, extent.z);
+    return .{
+        .center = lo.add(extent.scale(0.5)),
+        .scale = size / largest,
     };
-    defer if (is_debug) {
-        _ = debug_allocator.deinit();
-    };
+}
+
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
+    const io = init.io;
 
     rl.initWindow(windowWidth, windowHeight, "Space Travel");
     defer rl.closeWindow();
@@ -65,56 +43,71 @@ pub fn main() !void {
     var fb = try Framebuffer.init(gpa, windowWidth, windowHeight);
     defer fb.deinit(gpa);
 
-    const cube = render.Mesh{
-        .positions = &cube_vertices,
-        .colors = &cube_colors,
-        .indices = &cube_indices,
-    };
+    var sphere_low = try mesh.generateSphere(gpa, 8, 16);
+    defer sphere_low.deinit(gpa);
+    var sphere_mid = try mesh.generateSphere(gpa, 16, 32);
+    defer sphere_mid.deinit(gpa);
+    var sphere_high = try mesh.generateSphere(gpa, 32, 64);
+    defer sphere_high.deinit(gpa);
+
+    var model_obj = try obj.loadObj(gpa, io, "assets/models/model.obj");
+    defer model_obj.deinit(gpa);
+    const obj_fit = fitToSize(model_obj.positions, 4.0);
+
+    const spheres = [_]render.Mesh{ sphere_low, sphere_mid, sphere_high };
+    const sphere_x = [_]f32{ -9, -5, -1 };
 
     const aspect = @as(f32, windowWidth) / @as(f32, windowHeight);
 
     var camera = Camera{
-        .position = .{ .x = 0, .y = 4, .z = 25 },
-        .pitch = -0.15,
+        .position = .{ .x = 0, .y = 2, .z = 14 },
+        .pitch = -0.1,
     };
     camera.captureMouse(true);
 
     var angle: f32 = 0;
-    var title_buf: [160]u8 = undefined;
+    var title_buf: [192]u8 = undefined;
 
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
-        angle += dt;
+        angle += dt * 0.5;
         camera.update(dt);
 
         const view_proj = Mat4.mul(camera.projection(aspect), camera.view());
+        const spin = Mat4.rotateY(angle);
 
         fb.clear(rl.Color.black);
 
         var stats = render.Stats{};
-        const spin = Mat4.mul(Mat4.rotateY(angle), Mat4.rotateX(angle * 0.5));
 
-        var gz: i32 = -grid_half;
-        while (gz <= grid_half) : (gz += 1) {
-            var gx: i32 = -grid_half;
-            while (gx <= grid_half) : (gx += 1) {
-                const offset = rl.Vector3{
-                    .x = @as(f32, @floatFromInt(gx)) * grid_spacing,
-                    .y = 0,
-                    .z = @as(f32, @floatFromInt(gz)) * grid_spacing,
-                };
-                const model = Mat4.mul(Mat4.translate(offset), spin);
-                render.drawMesh(&fb, cube, Mat4.mul(view_proj, model), &stats);
-            }
+        for (spheres, sphere_x) |sphere, x| {
+            const model = Mat4.mul(
+                Mat4.translate(.{ .x = x, .y = 0, .z = 0 }),
+                Mat4.mul(spin, Mat4.scale(.{ .x = 1.5, .y = 1.5, .z = 1.5 })),
+            );
+            render.drawMesh(&fb, sphere, Mat4.mul(view_proj, model), &stats);
         }
+
+        const s = obj_fit.scale;
+        const obj_model = Mat4.mul(
+            Mat4.translate(.{ .x = 6, .y = 0, .z = 0 }),
+            Mat4.mul(
+                spin,
+                Mat4.mul(
+                    Mat4.scale(.{ .x = s, .y = s, .z = s }),
+                    Mat4.translate(obj_fit.center.negate()),
+                ),
+            ),
+        );
+        render.drawMesh(&fb, model_obj, Mat4.mul(view_proj, obj_model), &stats);
 
         fb.present();
 
         const p = camera.position;
         const title = std.fmt.bufPrintZ(
             &title_buf,
-            "Space Travel - {d} FPS - drawn: {d} culled: {d} - pos: ({d:.1}, {d:.1}, {d:.1})",
-            .{ rl.getFPS(), stats.drawn, stats.culled, p.x, p.y, p.z },
+            "Space Travel - {d} FPS - drawn: {d} culled: {d} - obj tris: {d} - pos: ({d:.1}, {d:.1}, {d:.1})",
+            .{ rl.getFPS(), stats.drawn, stats.culled, model_obj.indices.len, p.x, p.y, p.z },
         ) catch "Space Travel";
         rl.setWindowTitle(title);
     }
