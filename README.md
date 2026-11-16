@@ -31,6 +31,8 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 | Espacio / Ctrl | Subir / bajar |
 | Shift | Moverse más rápido |
 | Tab | Liberar / capturar el mouse |
+| P | Pausar / reanudar las órbitas |
+| ↑ / ↓ | Acelerar / desacelerar el tiempo |
 | 1 – 9 | Viajar rápido a un cuerpo celeste |
 | Esc | Salir |
 
@@ -40,8 +42,8 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - [x] Pipeline de rasterización con z-buffer
 - [x] Back-face culling
 - [x] Cámara con movimiento 3D
-- [ ] Sol y planetas orbitando
-- [ ] Lunas
+- [x] Sol y planetas orbitando
+- [x] Lunas
 - [x] Texturas por cuerpo celeste
 - [x] Iluminación desde el sol
 - [ ] Shaders únicos por cuerpo celeste
