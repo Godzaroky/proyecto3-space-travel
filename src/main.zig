@@ -4,37 +4,21 @@ const Framebuffer = @import("framebuffer.zig").Framebuffer;
 const math = @import("math.zig");
 const render = @import("render.zig");
 const mesh = @import("mesh.zig");
-const obj = @import("obj.zig");
+const shaders = @import("shaders.zig");
+const Texture = @import("texture.zig").Texture;
 const Camera = @import("camera.zig").Camera;
 const Mat4 = math.Mat4;
 
 const windowWidth = 800;
 const windowHeight = 600;
 
-// escena de prueba de la fase 4 (generada con asistencia de IA)
-const Fit = struct {
-    center: rl.Vector3,
-    scale: f32,
-};
-
-fn fitToSize(positions: []const rl.Vector3, size: f32) Fit {
-    var lo = positions[0];
-    var hi = positions[0];
-    for (positions) |p| {
-        lo = lo.min(p);
-        hi = hi.max(p);
-    }
-    const extent = hi.subtract(lo);
-    const largest = @max(extent.x, extent.y, extent.z);
-    return .{
-        .center = lo.add(extent.scale(0.5)),
-        .scale = size / largest,
-    };
+fn uniformScale(s: f32) Mat4 {
+    return Mat4.scale(.{ .x = s, .y = s, .z = s });
 }
 
+// escena de prueba de la fase 5 (generada con asistencia de IA)
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
-    const io = init.io;
 
     rl.initWindow(windowWidth, windowHeight, "Space Travel");
     defer rl.closeWindow();
@@ -43,71 +27,74 @@ pub fn main(init: std.process.Init) !void {
     var fb = try Framebuffer.init(gpa, windowWidth, windowHeight);
     defer fb.deinit(gpa);
 
-    var sphere_low = try mesh.generateSphere(gpa, 8, 16);
-    defer sphere_low.deinit(gpa);
-    var sphere_mid = try mesh.generateSphere(gpa, 16, 32);
-    defer sphere_mid.deinit(gpa);
-    var sphere_high = try mesh.generateSphere(gpa, 32, 64);
-    defer sphere_high.deinit(gpa);
+    var sphere = try mesh.generateSphere(gpa, 32, 64);
+    defer sphere.deinit(gpa);
 
-    var model_obj = try obj.loadObj(gpa, io, "assets/models/model.obj");
-    defer model_obj.deinit(gpa);
-    const obj_fit = fitToSize(model_obj.positions, 4.0);
+    var checker_tex = try Texture.checker(gpa, 256, 8, rl.Color.white, rl.Color.black);
+    defer checker_tex.deinit(gpa);
+    var sun_tex = try Texture.load(gpa, "assets/textures/sun.png");
+    defer sun_tex.deinit(gpa);
+    var earth_tex = try Texture.load(gpa, "assets/textures/earth.png");
+    defer earth_tex.deinit(gpa);
 
-    const spheres = [_]render.Mesh{ sphere_low, sphere_mid, sphere_high };
-    const sphere_x = [_]f32{ -9, -5, -1 };
+    const checker_mat = shaders.Material{ .texture = &checker_tex, .shader = &shaders.emissive };
+    const sun_mat = shaders.Material{ .texture = &sun_tex, .shader = &shaders.emissive };
+    const earth_mat = shaders.Material{ .texture = &earth_tex, .shader = &shaders.litTextured };
+
+    var uniforms = shaders.Uniforms{
+        .light_pos = .{ .x = 0, .y = 0, .z = 0 },
+        .light_color = .{ .x = 1, .y = 1, .z = 1 },
+        .ambient = 0.08,
+    };
 
     const aspect = @as(f32, windowWidth) / @as(f32, windowHeight);
 
     var camera = Camera{
-        .position = .{ .x = 0, .y = 2, .z = 14 },
-        .pitch = -0.1,
+        .position = .{ .x = 0, .y = 6, .z = 28 },
+        .pitch = -0.2,
     };
     camera.captureMouse(true);
 
-    var angle: f32 = 0;
     var title_buf: [192]u8 = undefined;
 
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
-        angle += dt * 0.5;
+        uniforms.time += dt;
+        const t = uniforms.time;
         camera.update(dt);
 
         const view_proj = Mat4.mul(camera.projection(aspect), camera.view());
-        const spin = Mat4.rotateY(angle);
 
         fb.clear(rl.Color.black);
 
         var stats = render.Stats{};
 
-        for (spheres, sphere_x) |sphere, x| {
-            const model = Mat4.mul(
-                Mat4.translate(.{ .x = x, .y = 0, .z = 0 }),
-                Mat4.mul(spin, Mat4.scale(.{ .x = 1.5, .y = 1.5, .z = 1.5 })),
-            );
-            render.drawMesh(&fb, sphere, Mat4.mul(view_proj, model), &stats);
-        }
+        // sol
+        const sun_model = Mat4.mul(Mat4.rotateY(t * 0.1), uniformScale(3));
+        render.drawMesh(&fb, sphere, sun_model, view_proj, &sun_mat, &uniforms, &stats);
 
-        const s = obj_fit.scale;
-        const obj_model = Mat4.mul(
-            Mat4.translate(.{ .x = 6, .y = 0, .z = 0 }),
-            Mat4.mul(
-                spin,
-                Mat4.mul(
-                    Mat4.scale(.{ .x = s, .y = s, .z = s }),
-                    Mat4.translate(obj_fit.center.negate()),
-                ),
-            ),
+        // planeta orbitando
+        const orbit = t * 0.3;
+        const earth_model = Mat4.mul(
+            Mat4.translate(.{ .x = @cos(orbit) * 12, .y = 0, .z = @sin(orbit) * 12 }),
+            Mat4.rotateY(t),
         );
-        render.drawMesh(&fb, model_obj, Mat4.mul(view_proj, obj_model), &stats);
+        render.drawMesh(&fb, sphere, earth_model, view_proj, &earth_mat, &uniforms, &stats);
+
+        // tablero
+        const checker_model = Mat4.mul(
+            Mat4.translate(.{ .x = -6, .y = 5, .z = 0 }),
+            Mat4.mul(Mat4.rotateY(t * 0.5), uniformScale(1.5)),
+        );
+        render.drawMesh(&fb, sphere, checker_model, view_proj, &checker_mat, &uniforms, &stats);
 
         fb.present();
 
         const p = camera.position;
         const title = std.fmt.bufPrintZ(
             &title_buf,
-            "Space Travel - {d} FPS - drawn: {d} culled: {d} - obj tris: {d} - pos: ({d:.1}, {d:.1}, {d:.1})",
-            .{ rl.getFPS(), stats.drawn, stats.culled, model_obj.indices.len, p.x, p.y, p.z },
+            "Space Travel - {d} FPS - drawn: {d} culled: {d} - pos: ({d:.1}, {d:.1}, {d:.1})",
+            .{ rl.getFPS(), stats.drawn, stats.culled, p.x, p.y, p.z },
         ) catch "Space Travel";
         rl.setWindowTitle(title);
     }

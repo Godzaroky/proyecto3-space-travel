@@ -42,8 +42,8 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - [x] Cámara con movimiento 3D
 - [ ] Sol y planetas orbitando
 - [ ] Lunas
-- [ ] Texturas por cuerpo celeste
-- [ ] Iluminación desde el sol
+- [x] Texturas por cuerpo celeste
+- [x] Iluminación desde el sol
 - [ ] Shaders únicos por cuerpo celeste
 - [ ] Skybox de estrellas
 - [ ] LOD
@@ -68,5 +68,5 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 ## Créditos y atribuciones
 
 - Código generado por LLMs o tomado de internet está marcado con un comentario en el archivo correspondiente.
-- Texturas: *(pendiente: listar fuentes y licencias)*
+- Texturas de planetas: [Solar System Scope](https://www.solarsystemscope.com/textures/), licencia [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - Modelo de la nave: modelado por el autor en Blender (`assets/models/ship.blend`).

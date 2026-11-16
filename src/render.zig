@@ -2,8 +2,12 @@ const rl = @import("raylib");
 const std = @import("std");
 const math = @import("math.zig");
 const Framebuffer = @import("framebuffer.zig").Framebuffer;
+const shaders = @import("shaders.zig");
 
 const Mat4 = math.Mat4;
+const Vector3 = rl.Vector3;
+const Material = shaders.Material;
+const Uniforms = shaders.Uniforms;
 
 pub const Mesh = struct {
     positions: []const rl.Vector3,
@@ -21,10 +25,41 @@ pub const Mesh = struct {
     }
 };
 
+// datos que se interpolan por pixel
+pub const Varyings = struct {
+    world_pos: Vector3,
+    normal: Vector3,
+    uv: rl.Vector2,
+
+    pub fn scale(self: Varyings, f: f32) Varyings {
+        return .{
+            .world_pos = self.world_pos.scale(f),
+            .normal = self.normal.scale(f),
+            .uv = self.uv.scale(f),
+        };
+    }
+
+    pub fn add(self: Varyings, o: Varyings) Varyings {
+        return .{
+            .world_pos = self.world_pos.add(o.world_pos),
+            .normal = self.normal.add(o.normal),
+            .uv = self.uv.add(o.uv),
+        };
+    }
+
+    pub fn lerp(self: Varyings, o: Varyings, t: f32) Varyings {
+        return .{
+            .world_pos = self.world_pos.lerp(o.world_pos, t),
+            .normal = self.normal.lerp(o.normal, t),
+            .uv = self.uv.lerp(o.uv, t),
+        };
+    }
+};
+
 // vértice en clip space antes del divide
 pub const ClipVertex = struct {
     pos: rl.Vector4,
-    color: rl.Vector3,
+    v: Varyings,
 };
 
 // vértice en pantalla antes de rasterizar
@@ -33,7 +68,7 @@ pub const ScreenVertex = struct {
     y: f32,
     z: f32,
     inv_w: f32,
-    color_w: rl.Vector3,
+    v_w: Varyings,
 };
 
 pub const Stats = struct {
@@ -44,7 +79,7 @@ pub const Stats = struct {
 pub fn lerpClip(a: ClipVertex, b: ClipVertex, t: f32) ClipVertex {
     return .{
         .pos = a.pos.lerp(b.pos, t),
-        .color = a.color.lerp(b.color, t),
+        .v = a.v.lerp(b.v, t),
     };
 }
 
@@ -69,15 +104,15 @@ pub fn clipNear(input: [3]ClipVertex, out: *[4]ClipVertex) usize {
     return count;
 }
 
-pub fn toScreenVertex(v: ClipVertex, width: i32, height: i32) ScreenVertex {
-    const s = Mat4.toScreen(v.pos, width, height);
-    const inv_w = 1.0 / v.pos.w;
+pub fn toScreenVertex(c: ClipVertex, width: i32, height: i32) ScreenVertex {
+    const s = Mat4.toScreen(c.pos, width, height);
+    const inv_w = 1.0 / c.pos.w;
     return .{
         .x = s.x,
         .y = s.y,
         .z = s.z,
         .inv_w = inv_w,
-        .color_w = v.color.scale(inv_w),
+        .v_w = c.v.scale(inv_w),
     };
 }
 
@@ -90,16 +125,14 @@ pub fn isBackFace(v0: ScreenVertex, v1: ScreenVertex, v2: ScreenVertex) bool {
     return area >= 0;
 }
 
-fn toColor(c: rl.Vector3) rl.Color {
-    return rl.Color.init(
-        @intFromFloat(std.math.clamp(c.x, 0, 1) * 255),
-        @intFromFloat(std.math.clamp(c.y, 0, 1) * 255),
-        @intFromFloat(std.math.clamp(c.z, 0, 1) * 255),
-        255,
-    );
-}
-
-pub fn rasterTriangle(fb: *Framebuffer, v0: ScreenVertex, v1: ScreenVertex, v2: ScreenVertex) void {
+pub fn rasterTriangle(
+    fb: *Framebuffer,
+    v0: ScreenVertex,
+    v1: ScreenVertex,
+    v2: ScreenVertex,
+    mat: *const Material,
+    u: *const Uniforms,
+) void {
     const area = edge(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
     if (area == 0) return;
 
@@ -125,26 +158,55 @@ pub fn rasterTriangle(fb: *Framebuffer, v0: ScreenVertex, v1: ScreenVertex, v2: 
 
             const z = b0 * v0.z + b1 * v1.z + b2 * v2.z;
 
+            // early-z
+            const i: usize = @intCast(y * fb.width + x);
+            if (z >= fb.depth[i]) continue;
+
             // corrección de perspectiva
             const inv_w = b0 * v0.inv_w + b1 * v1.inv_w + b2 * v2.inv_w;
-            const color = v0.color_w.scale(b0)
-                .add(v1.color_w.scale(b1))
-                .add(v2.color_w.scale(b2))
+            const v = v0.v_w.scale(b0)
+                .add(v1.v_w.scale(b1))
+                .add(v2.v_w.scale(b2))
                 .scale(1.0 / inv_w);
 
-            fb.setPixelDepth(x, y, z, toColor(color));
+            const frag = shaders.Fragment{
+                .world_pos = v.world_pos,
+                .normal = v.normal.normalize(),
+                .uv = v.uv,
+            };
+
+            fb.depth[i] = z;
+            fb.color[i] = mat.shader(frag, mat, u);
         }
     }
 }
 
-pub fn drawMesh(fb: *Framebuffer, mesh: Mesh, mvp: Mat4, stats: *Stats) void {
+pub fn drawMesh(
+    fb: *Framebuffer,
+    mesh: Mesh,
+    model: Mat4,
+    view_proj: Mat4,
+    mat: *const Material,
+    u: *const Uniforms,
+    stats: *Stats,
+) void {
     for (mesh.indices) |tri| {
         var clip: [3]ClipVertex = undefined;
         for (0..3) |k| {
-            const p = mesh.positions[tri[k]];
+            const idx = tri[k];
+            const p = mesh.positions[idx];
+            const nrm = mesh.normals[idx];
+
+            const world = Mat4.mulVec4(model, .{ .x = p.x, .y = p.y, .z = p.z, .w = 1 });
+            const world_n = Mat4.mulVec4(model, .{ .x = nrm.x, .y = nrm.y, .z = nrm.z, .w = 0 });
+
             clip[k] = .{
-                .pos = Mat4.mulVec4(mvp, .{ .x = p.x, .y = p.y, .z = p.z, .w = 1 }),
-                .color = mesh.colors[tri[k]],
+                .pos = Mat4.mulVec4(view_proj, world),
+                .v = .{
+                    .world_pos = .{ .x = world.x, .y = world.y, .z = world.z },
+                    .normal = (Vector3{ .x = world_n.x, .y = world_n.y, .z = world_n.z }).normalize(),
+                    .uv = mesh.uvs[idx],
+                },
             };
         }
 
@@ -162,8 +224,8 @@ pub fn drawMesh(fb: *Framebuffer, mesh: Mesh, mvp: Mat4, stats: *Stats) void {
             continue;
         }
 
-        rasterTriangle(fb, s[0], s[1], s[2]);
-        if (n == 4) rasterTriangle(fb, s[0], s[2], s[3]);
+        rasterTriangle(fb, s[0], s[1], s[2], mat, u);
+        if (n == 4) rasterTriangle(fb, s[0], s[2], s[3], mat, u);
         stats.drawn += 1;
     }
 }
