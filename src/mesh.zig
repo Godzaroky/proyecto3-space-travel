@@ -78,3 +78,51 @@ pub fn generateSphere(allocator: std.mem.Allocator, stacks: u32, slices: u32) !M
         .indices = indices,
     };
 }
+
+// anillo plano en el plano XZ (generado con asistencia de IA)
+pub fn generateRing(allocator: std.mem.Allocator, inner: f32, outer: f32, segments: u32) !Mesh {
+    const vert_count: usize = (@as(usize, segments) + 1) * 2;
+
+    const positions = try allocator.alloc(rl.Vector3, vert_count);
+    errdefer allocator.free(positions);
+    const normals = try allocator.alloc(rl.Vector3, vert_count);
+    errdefer allocator.free(normals);
+    const uvs = try allocator.alloc(rl.Vector2, vert_count);
+    errdefer allocator.free(uvs);
+    const colors = try allocator.alloc(rl.Vector3, vert_count);
+    errdefer allocator.free(colors);
+
+    const segments_f: f32 = @floatFromInt(segments);
+    for (0..@as(usize, segments) + 1) |i| {
+        const f = @as(f32, @floatFromInt(i)) / segments_f;
+        const a = f * std.math.pi * 2;
+        const c = @cos(a);
+        const s = @sin(a);
+
+        positions[i * 2] = .{ .x = c * inner, .y = 0, .z = s * inner };
+        positions[i * 2 + 1] = .{ .x = c * outer, .y = 0, .z = s * outer };
+        normals[i * 2] = .{ .x = 0, .y = 1, .z = 0 };
+        normals[i * 2 + 1] = .{ .x = 0, .y = 1, .z = 0 };
+        uvs[i * 2] = .{ .x = 0, .y = f };
+        uvs[i * 2 + 1] = .{ .x = 1, .y = f };
+    }
+    fillNormalColors(normals, colors);
+
+    const indices = try allocator.alloc([3]u32, @as(usize, segments) * 2);
+    for (0..segments) |i| {
+        const in0: u32 = @intCast(i * 2);
+        const out0 = in0 + 1;
+        const in1 = in0 + 2;
+        const out1 = in0 + 3;
+        indices[i * 2] = .{ in0, out0, out1 };
+        indices[i * 2 + 1] = .{ in0, out1, in1 };
+    }
+
+    return .{
+        .positions = positions,
+        .normals = normals,
+        .uvs = uvs,
+        .colors = colors,
+        .indices = indices,
+    };
+}

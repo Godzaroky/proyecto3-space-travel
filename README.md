@@ -46,12 +46,24 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - [x] Lunas
 - [x] Texturas por cuerpo celeste
 - [x] Iluminación desde el sol
-- [ ] Shaders únicos por cuerpo celeste
+- [x] Shaders únicos por cuerpo celeste
 - [ ] Skybox de estrellas
 - [ ] LOD
 - [ ] Nave que sigue a la cámara (modelada en Blender, con caras no triangulares)
 - [ ] Colisiones con los cuerpos del sistema
 - [ ] Fast travel con animación
+
+## Shaders por cuerpo celeste
+
+| Cuerpo | Shader | Qué lo hace especial |
+|---|---|---|
+| Sol | `sun` | Superficie animada con ruido fractal y pulso de brillo |
+| Mercurio | `mercury` | Cel shading en 4 niveles con contorno oscuro |
+| Tierra | `earth` | Transición día/noche con luces de ciudades y nubes procedurales animadas |
+| Luna | `moonVertex` + `moon` | El vertex shader deforma la geometría con ruido (relieve) |
+| Marte | `mars` | Tormentas de polvo animadas y brillo atmosférico en el borde |
+| Júpiter | `jupiter` | Bandas que fluyen con rotación diferencial y turbulencia |
+| Saturno | `saturnRing` | Anillos transparentes procedurales con división de Cassini |
 
 ## Estructura del proyecto
 

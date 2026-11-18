@@ -175,10 +175,28 @@ pub fn rasterTriangle(
                 .uv = v.uv,
             };
 
-            fb.depth[i] = z;
-            fb.color[i] = mat.shader(frag, mat, u);
+            const color = mat.shader(frag, mat, u);
+
+            if (mat.transparent) {
+                if (color.a == 0) continue;
+                fb.color[i] = blend(fb.color[i], color);
+            } else {
+                fb.depth[i] = z;
+                fb.color[i] = color;
+            }
         }
     }
+}
+
+fn blend(dst: rl.Color, src: rl.Color) rl.Color {
+    const a: u32 = src.a;
+    const inv: u32 = 255 - a;
+    return rl.Color.init(
+        @intCast((@as(u32, src.r) * a + @as(u32, dst.r) * inv) / 255),
+        @intCast((@as(u32, src.g) * a + @as(u32, dst.g) * inv) / 255),
+        @intCast((@as(u32, src.b) * a + @as(u32, dst.b) * inv) / 255),
+        255,
+    );
 }
 
 pub fn drawMesh(
@@ -194,8 +212,14 @@ pub fn drawMesh(
         var clip: [3]ClipVertex = undefined;
         for (0..3) |k| {
             const idx = tri[k];
-            const p = mesh.positions[idx];
-            const nrm = mesh.normals[idx];
+            var p = mesh.positions[idx];
+            var nrm = mesh.normals[idx];
+
+            if (mat.vertex) |vertex_fn| {
+                const out = vertex_fn(p, nrm, u);
+                p = out.pos;
+                nrm = out.normal;
+            }
 
             const world = Mat4.mulVec4(model, .{ .x = p.x, .y = p.y, .z = p.z, .w = 1 });
             const world_n = Mat4.mulVec4(model, .{ .x = nrm.x, .y = nrm.y, .z = nrm.z, .w = 0 });
@@ -219,7 +243,7 @@ pub fn drawMesh(
             s[k] = toScreenVertex(poly[k], fb.width, fb.height);
         }
 
-        if (isBackFace(s[0], s[1], s[2])) {
+        if (!mat.double_sided and isBackFace(s[0], s[1], s[2])) {
             stats.culled += 1;
             continue;
         }

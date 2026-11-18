@@ -25,6 +25,8 @@ pub fn main(init: std.process.Init) !void {
 
     var sphere = try mesh.generateSphere(gpa, 32, 64);
     defer sphere.deinit(gpa);
+    var ring = try mesh.generateRing(gpa, 1.3, 2.4, 96);
+    defer ring.deinit(gpa);
 
     var system = try SolarSystem.init(gpa);
     defer system.deinit(gpa);
@@ -62,13 +64,14 @@ pub fn main(init: std.process.Init) !void {
         uniforms.time += dt;
         system.update(sim_time);
         uniforms.light_pos = system.sunPosition();
+        uniforms.camera_pos = camera.position;
 
         const view_proj = Mat4.mul(camera.projection(aspect), camera.view());
 
         fb.clear(rl.Color.black);
 
         var stats = render.Stats{};
-        system.draw(&fb, sphere, view_proj, &uniforms, &stats);
+        system.draw(&fb, sphere, ring, view_proj, &uniforms, &stats);
 
         fb.present();
 
