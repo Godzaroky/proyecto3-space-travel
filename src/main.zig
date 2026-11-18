@@ -7,6 +7,7 @@ const mesh = @import("mesh.zig");
 const shaders = @import("shaders.zig");
 const SolarSystem = @import("solar_system.zig").SolarSystem;
 const Camera = @import("camera.zig").Camera;
+const Skybox = @import("skybox.zig").Skybox;
 const Mat4 = math.Mat4;
 
 const windowWidth = 800;
@@ -30,6 +31,9 @@ pub fn main(init: std.process.Init) !void {
 
     var system = try SolarSystem.init(gpa);
     defer system.deinit(gpa);
+
+    var skybox = try Skybox.init(gpa, 1024);
+    defer skybox.deinit(gpa);
 
     var uniforms = shaders.Uniforms{
         .light_pos = system.sunPosition(),
@@ -69,6 +73,8 @@ pub fn main(init: std.process.Init) !void {
         const view_proj = Mat4.mul(camera.projection(aspect), camera.view());
 
         fb.clear(rl.Color.black);
+
+        skybox.draw(&fb, &camera, aspect);
 
         var stats = render.Stats{};
         system.draw(&fb, sphere, ring, view_proj, &uniforms, &stats);

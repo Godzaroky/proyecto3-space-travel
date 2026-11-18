@@ -47,7 +47,7 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - [x] Texturas por cuerpo celeste
 - [x] Iluminación desde el sol
 - [x] Shaders únicos por cuerpo celeste
-- [ ] Skybox de estrellas
+- [x] Skybox de estrellas
 - [ ] LOD
 - [ ] Nave que sigue a la cámara (modelada en Blender, con caras no triangulares)
 - [ ] Colisiones con los cuerpos del sistema
