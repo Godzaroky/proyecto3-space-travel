@@ -3,6 +3,8 @@ const std = @import("std");
 const math = @import("math.zig");
 const Framebuffer = @import("framebuffer.zig").Framebuffer;
 const shaders = @import("shaders.zig");
+const Skybox = @import("skybox.zig").Skybox;
+const Camera = @import("camera.zig").Camera;
 
 const Mat4 = math.Mat4;
 const Vector3 = rl.Vector3;
@@ -71,9 +73,22 @@ pub const ScreenVertex = struct {
     v_w: Varyings,
 };
 
+pub const Triangle = struct {
+    v: [3]ScreenVertex,
+    mat: Material,
+};
+
 pub const Stats = struct {
     drawn: u32 = 0,
     culled: u32 = 0,
+    bodies_culled: u32 = 0,
+    lod: [4]u32 = @splat(0),
+};
+
+pub const SkyPass = struct {
+    skybox: *const Skybox,
+    camera: *const Camera,
+    aspect: f32,
 };
 
 pub fn lerpClip(a: ClipVertex, b: ClipVertex, t: f32) ClipVertex {
@@ -125,41 +140,88 @@ pub fn isBackFace(v0: ScreenVertex, v1: ScreenVertex, v2: ScreenVertex) bool {
     return area >= 0;
 }
 
-pub fn rasterTriangle(
-    fb: *Framebuffer,
-    v0: ScreenVertex,
-    v1: ScreenVertex,
-    v2: ScreenVertex,
-    mat: *const Material,
-    u: *const Uniforms,
-) void {
-    const area = edge(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
-    if (area == 0) return;
+fn blend(dst: rl.Color, src: rl.Color) rl.Color {
+    const a: u32 = src.a;
+    const inv: u32 = 255 - a;
+    return rl.Color.init(
+        @intCast((@as(u32, src.r) * a + @as(u32, dst.r) * inv) / 255),
+        @intCast((@as(u32, src.g) * a + @as(u32, dst.g) * inv) / 255),
+        @intCast((@as(u32, src.b) * a + @as(u32, dst.b) * inv) / 255),
+        255,
+    );
+}
 
-    // bounding box
+// rasterización
+
+const Bounds = struct {
+    min_x: i32,
+    max_x: i32,
+    min_y: i32,
+    max_y: i32,
+    inv_area: f32,
+};
+
+fn triangleBounds(tri: *const Triangle, fb: *const Framebuffer) ?Bounds {
+    const v0 = tri.v[0];
+    const v1 = tri.v[1];
+    const v2 = tri.v[2];
+    const area = edge(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y);
+    if (area == 0) return null;
+
     const w: f32 = @floatFromInt(fb.width - 1);
     const h: f32 = @floatFromInt(fb.height - 1);
-    const min_x: i32 = @intFromFloat(std.math.clamp(@floor(@min(v0.x, v1.x, v2.x)), 0, w));
-    const max_x: i32 = @intFromFloat(std.math.clamp(@ceil(@max(v0.x, v1.x, v2.x)), 0, w));
-    const min_y: i32 = @intFromFloat(std.math.clamp(@floor(@min(v0.y, v1.y, v2.y)), 0, h));
-    const max_y: i32 = @intFromFloat(std.math.clamp(@ceil(@max(v0.y, v1.y, v2.y)), 0, h));
+    const lo_x = @floor(@min(v0.x, v1.x, v2.x));
+    const hi_x = @ceil(@max(v0.x, v1.x, v2.x));
+    const lo_y = @floor(@min(v0.y, v1.y, v2.y));
+    const hi_y = @ceil(@max(v0.y, v1.y, v2.y));
+    if (hi_x < 0 or hi_y < 0 or lo_x > w or lo_y > h) return null;
 
-    var y = min_y;
-    while (y <= max_y) : (y += 1) {
+    return .{
+        .min_x = @intFromFloat(std.math.clamp(lo_x, 0, w)),
+        .max_x = @intFromFloat(std.math.clamp(hi_x, 0, w)),
+        .min_y = @intFromFloat(std.math.clamp(lo_y, 0, h)),
+        .max_y = @intFromFloat(std.math.clamp(hi_y, 0, h)),
+        .inv_area = 1.0 / area,
+    };
+}
+
+fn rasterRows(fb: *Framebuffer, tri: *const Triangle, bb: Bounds, y0: i32, y1: i32, u: *const Uniforms) void {
+    const v0 = tri.v[0];
+    const v1 = tri.v[1];
+    const v2 = tri.v[2];
+    const mat = &tri.mat;
+
+    // paso de cada función de borde al avanzar un pixel en x
+    const step0 = -(v2.y - v1.y);
+    const step1 = -(v0.y - v2.y);
+    const step2 = -(v1.y - v0.y);
+
+    const px0 = @as(f32, @floatFromInt(bb.min_x)) + 0.5;
+
+    var y = y0;
+    while (y <= y1) : (y += 1) {
         const py = @as(f32, @floatFromInt(y)) + 0.5;
-        var x = min_x;
-        while (x <= max_x) : (x += 1) {
-            const px = @as(f32, @floatFromInt(x)) + 0.5;
+        var e0 = edge(v1.x, v1.y, v2.x, v2.y, px0, py);
+        var e1 = edge(v2.x, v2.y, v0.x, v0.y, px0, py);
+        var e2 = edge(v0.x, v0.y, v1.x, v1.y, px0, py);
 
-            const b0 = edge(v1.x, v1.y, v2.x, v2.y, px, py) / area;
-            const b1 = edge(v2.x, v2.y, v0.x, v0.y, px, py) / area;
-            const b2 = edge(v0.x, v0.y, v1.x, v1.y, px, py) / area;
+        const row: usize = @intCast(y * fb.width);
+        var x = bb.min_x;
+        while (x <= bb.max_x) : ({
+            x += 1;
+            e0 += step0;
+            e1 += step1;
+            e2 += step2;
+        }) {
+            const b0 = e0 * bb.inv_area;
+            const b1 = e1 * bb.inv_area;
+            const b2 = e2 * bb.inv_area;
             if (b0 < 0 or b1 < 0 or b2 < 0) continue;
 
             const z = b0 * v0.z + b1 * v1.z + b2 * v2.z;
 
             // early-z
-            const i: usize = @intCast(y * fb.width + x);
+            const i = row + @as(usize, @intCast(x));
             if (z >= fb.depth[i]) continue;
 
             // corrección de perspectiva
@@ -188,68 +250,143 @@ pub fn rasterTriangle(
     }
 }
 
-fn blend(dst: rl.Color, src: rl.Color) rl.Color {
-    const a: u32 = src.a;
-    const inv: u32 = 255 - a;
-    return rl.Color.init(
-        @intCast((@as(u32, src.r) * a + @as(u32, dst.r) * inv) / 255),
-        @intCast((@as(u32, src.g) * a + @as(u32, dst.g) * inv) / 255),
-        @intCast((@as(u32, src.b) * a + @as(u32, dst.b) * inv) / 255),
-        255,
-    );
-}
+// cada hilo procesa franjas de filas intercaladas
+const chunk_rows: i32 = 8;
+const max_threads = 32;
 
-pub fn drawMesh(
+const Job = struct {
     fb: *Framebuffer,
-    mesh: Mesh,
-    model: Mat4,
-    view_proj: Mat4,
-    mat: *const Material,
+    triangles: []const Triangle,
     u: *const Uniforms,
-    stats: *Stats,
-) void {
-    for (mesh.indices) |tri| {
-        var clip: [3]ClipVertex = undefined;
-        for (0..3) |k| {
-            const idx = tri[k];
-            var p = mesh.positions[idx];
-            var nrm = mesh.normals[idx];
+    sky: ?SkyPass,
+    thread_count: usize,
+};
 
-            if (mat.vertex) |vertex_fn| {
-                const out = vertex_fn(p, nrm, u);
-                p = out.pos;
-                nrm = out.normal;
-            }
+fn worker(job: *const Job, t: usize) void {
+    const n: i32 = @intCast(job.thread_count);
+    const ti: i32 = @intCast(t);
+    const height = job.fb.height;
 
-            const world = Mat4.mulVec4(model, .{ .x = p.x, .y = p.y, .z = p.z, .w = 1 });
-            const world_n = Mat4.mulVec4(model, .{ .x = nrm.x, .y = nrm.y, .z = nrm.z, .w = 0 });
-
-            clip[k] = .{
-                .pos = Mat4.mulVec4(view_proj, world),
-                .v = .{
-                    .world_pos = .{ .x = world.x, .y = world.y, .z = world.z },
-                    .normal = (Vector3{ .x = world_n.x, .y = world_n.y, .z = world_n.z }).normalize(),
-                    .uv = mesh.uvs[idx],
-                },
-            };
+    if (job.sky) |sky| {
+        var c = ti;
+        while (c * chunk_rows < height) : (c += n) {
+            const y0 = c * chunk_rows;
+            sky.skybox.drawRows(job.fb, sky.camera, sky.aspect, y0, @min(height, y0 + chunk_rows));
         }
+    }
 
-        var poly: [4]ClipVertex = undefined;
-        const n = clipNear(clip, &poly);
-        if (n < 3) continue;
-
-        var s: [4]ScreenVertex = undefined;
-        for (0..n) |k| {
-            s[k] = toScreenVertex(poly[k], fb.width, fb.height);
+    for (job.triangles) |*tri| {
+        const bb = triangleBounds(tri, job.fb) orelse continue;
+        var c = @divFloor(bb.min_y, chunk_rows);
+        c += @mod(ti - @mod(c, n), n);
+        while (c * chunk_rows <= bb.max_y) : (c += n) {
+            const y0 = @max(bb.min_y, c * chunk_rows);
+            const y1 = @min(bb.max_y, c * chunk_rows + chunk_rows - 1);
+            rasterRows(job.fb, tri, bb, y0, y1, job.u);
         }
-
-        if (!mat.double_sided and isBackFace(s[0], s[1], s[2])) {
-            stats.culled += 1;
-            continue;
-        }
-
-        rasterTriangle(fb, s[0], s[1], s[2], mat, u);
-        if (n == 4) rasterTriangle(fb, s[0], s[2], s[3], mat, u);
-        stats.drawn += 1;
     }
 }
+
+pub const Renderer = struct {
+    allocator: std.mem.Allocator,
+    triangles: std.ArrayList(Triangle) = .empty,
+    thread_count: usize,
+    stats: Stats = .{},
+
+    pub fn init(allocator: std.mem.Allocator) Renderer {
+        const cpus = std.Thread.getCpuCount() catch 4;
+        return .{
+            .allocator = allocator,
+            .thread_count = std.math.clamp(cpus, 1, max_threads),
+        };
+    }
+
+    pub fn deinit(self: *Renderer) void {
+        self.triangles.deinit(self.allocator);
+    }
+
+    pub fn begin(self: *Renderer) void {
+        self.triangles.clearRetainingCapacity();
+        self.stats = .{};
+    }
+
+    // etapa de geometría: transforma, recorta y descarta triángulos
+    pub fn submit(
+        self: *Renderer,
+        fb: *const Framebuffer,
+        mesh: Mesh,
+        model: Mat4,
+        view_proj: Mat4,
+        mat: Material,
+        u: *const Uniforms,
+    ) !void {
+        for (mesh.indices) |tri| {
+            var clip: [3]ClipVertex = undefined;
+            for (0..3) |k| {
+                const idx = tri[k];
+                var p = mesh.positions[idx];
+                var nrm = mesh.normals[idx];
+
+                if (mat.vertex) |vertex_fn| {
+                    const out = vertex_fn(p, nrm, u);
+                    p = out.pos;
+                    nrm = out.normal;
+                }
+
+                const world = Mat4.mulVec4(model, .{ .x = p.x, .y = p.y, .z = p.z, .w = 1 });
+                const world_n = Mat4.mulVec4(model, .{ .x = nrm.x, .y = nrm.y, .z = nrm.z, .w = 0 });
+
+                clip[k] = .{
+                    .pos = Mat4.mulVec4(view_proj, world),
+                    .v = .{
+                        .world_pos = .{ .x = world.x, .y = world.y, .z = world.z },
+                        .normal = (Vector3{ .x = world_n.x, .y = world_n.y, .z = world_n.z }).normalize(),
+                        .uv = mesh.uvs[idx],
+                    },
+                };
+            }
+
+            var poly: [4]ClipVertex = undefined;
+            const n = clipNear(clip, &poly);
+            if (n < 3) continue;
+
+            var s: [4]ScreenVertex = undefined;
+            for (0..n) |k| {
+                s[k] = toScreenVertex(poly[k], fb.width, fb.height);
+            }
+
+            if (!mat.double_sided and isBackFace(s[0], s[1], s[2])) {
+                self.stats.culled += 1;
+                continue;
+            }
+
+            try self.triangles.append(self.allocator, .{ .v = .{ s[0], s[1], s[2] }, .mat = mat });
+            if (n == 4) {
+                try self.triangles.append(self.allocator, .{ .v = .{ s[0], s[2], s[3] }, .mat = mat });
+            }
+            self.stats.drawn += 1;
+        }
+    }
+
+    // etapa de rasterización en paralelo
+    pub fn flush(self: *Renderer, fb: *Framebuffer, u: *const Uniforms, sky: ?SkyPass) void {
+        const job = Job{
+            .fb = fb,
+            .triangles = self.triangles.items,
+            .u = u,
+            .sky = sky,
+            .thread_count = self.thread_count,
+        };
+
+        var threads: [max_threads]?std.Thread = @splat(null);
+        for (1..self.thread_count) |t| {
+            threads[t] = std.Thread.spawn(.{}, worker, .{ &job, t }) catch null;
+        }
+
+        worker(&job, 0);
+
+        for (1..self.thread_count) |t| {
+            if (threads[t]) |thread| thread.join() else worker(&job, t);
+        }
+    }
+};

@@ -1,4 +1,3 @@
-// Generado con asistencia de IA (Claude)
 const rl = @import("raylib");
 const std = @import("std");
 const Mat4 = @import("math.zig").Mat4;
@@ -39,6 +38,32 @@ pub const Camera = struct {
 
     pub fn projection(self: Camera, aspect: f32) Mat4 {
         return Mat4.perspective(self.fov_y, aspect, self.near, self.far);
+    }
+
+    // frustum culling con esfera envolvente
+    pub fn sphereVisible(self: Camera, center: Vector3, radius: f32, aspect: f32) bool {
+        const f = self.forward();
+        const r = self.right();
+        const up = r.crossProduct(f);
+        const d = center.subtract(self.position);
+
+        const z = d.dotProduct(f);
+        if (z + radius < self.near or z - radius > self.far) return false;
+
+        const th = @tan(self.fov_y * 0.5);
+        const tw = th * aspect;
+        const x = d.dotProduct(r);
+        const y = d.dotProduct(up);
+        if (@abs(x) > z * tw + radius * @sqrt(1 + tw * tw)) return false;
+        if (@abs(y) > z * th + radius * @sqrt(1 + th * th)) return false;
+        return true;
+    }
+
+    // radio aproximado de una esfera en pixeles
+    pub fn screenRadius(self: Camera, center: Vector3, radius: f32, screen_height: f32) f32 {
+        const dist = center.distance(self.position);
+        if (dist <= radius) return std.math.inf(f32);
+        return radius / (dist * @tan(self.fov_y * 0.5)) * screen_height * 0.5;
     }
 
     pub fn captureMouse(self: *Camera, captured: bool) void {

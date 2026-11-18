@@ -48,10 +48,17 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - [x] Iluminación desde el sol
 - [x] Shaders únicos por cuerpo celeste
 - [x] Skybox de estrellas
-- [ ] LOD
+- [x] LOD
 - [ ] Nave que sigue a la cámara (modelada en Blender, con caras no triangulares)
 - [ ] Colisiones con los cuerpos del sistema
 - [ ] Fast travel con animación
+
+## Rendimiento
+
+- **LOD:** cada cuerpo usa una de 4 esferas (de 256 a 16,384 triángulos) según su tamaño en pantalla.
+- **Frustum culling:** los cuerpos fuera del campo de visión se descartan antes de procesar sus triángulos.
+- **Back-face culling** y **early-z:** los triángulos de espaldas y los pixeles tapados no llegan al shader.
+- **Rasterización en paralelo:** la pantalla se divide en franjas de 8 filas intercaladas entre todos los núcleos del CPU.
 
 ## Shaders por cuerpo celeste
 

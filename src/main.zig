@@ -13,6 +13,14 @@ const Mat4 = math.Mat4;
 const windowWidth = 800;
 const windowHeight = 600;
 
+// resoluciones de la esfera para cada nivel de LOD
+const lod_resolutions = [_][2]u32{
+    .{ 8, 16 },
+    .{ 16, 32 },
+    .{ 32, 64 },
+    .{ 64, 128 },
+};
+
 // escena del sistema solar (generada con asistencia de IA)
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
@@ -24,8 +32,14 @@ pub fn main(init: std.process.Init) !void {
     var fb = try Framebuffer.init(gpa, windowWidth, windowHeight);
     defer fb.deinit(gpa);
 
-    var sphere = try mesh.generateSphere(gpa, 32, 64);
-    defer sphere.deinit(gpa);
+    var lods: [lod_resolutions.len]render.Mesh = undefined;
+    var lod_count: usize = 0;
+    defer for (lods[0..lod_count]) |*m| m.deinit(gpa);
+    for (lod_resolutions, 0..) |res, i| {
+        lods[i] = try mesh.generateSphere(gpa, res[0], res[1]);
+        lod_count += 1;
+    }
+
     var ring = try mesh.generateRing(gpa, 1.3, 2.4, 96);
     defer ring.deinit(gpa);
 
@@ -34,6 +48,9 @@ pub fn main(init: std.process.Init) !void {
 
     var skybox = try Skybox.init(gpa, 1024);
     defer skybox.deinit(gpa);
+
+    var renderer = render.Renderer.init(gpa);
+    defer renderer.deinit();
 
     var uniforms = shaders.Uniforms{
         .light_pos = system.sunPosition(),
@@ -53,7 +70,7 @@ pub fn main(init: std.process.Init) !void {
     var sim_time: f32 = 0;
     var time_scale: f32 = 1;
     var paused = false;
-    var title_buf: [192]u8 = undefined;
+    var title_buf: [256]u8 = undefined;
 
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
@@ -74,18 +91,28 @@ pub fn main(init: std.process.Init) !void {
 
         fb.clear(rl.Color.black);
 
-        skybox.draw(&fb, &camera, aspect);
-
-        var stats = render.Stats{};
-        system.draw(&fb, sphere, ring, view_proj, &uniforms, &stats);
+        renderer.begin();
+        try system.draw(&renderer, &fb, &lods, ring, &camera, aspect, view_proj, &uniforms);
+        renderer.flush(&fb, &uniforms, .{ .skybox = &skybox, .camera = &camera, .aspect = aspect });
 
         fb.present();
 
-        const p = camera.position;
+        const s = renderer.stats;
         const title = std.fmt.bufPrintZ(
             &title_buf,
-            "Space Travel - {d} FPS - drawn: {d} - tiempo x{d}{s} - pos: ({d:.1}, {d:.1}, {d:.1})",
-            .{ rl.getFPS(), stats.drawn, time_scale, @as([]const u8, if (paused) " (pausa)" else ""), p.x, p.y, p.z },
+            "Space Travel - {d} FPS - hilos: {d} - tris: {d} - LOD: {d}/{d}/{d}/{d} - fuera de vista: {d} - tiempo x{d}{s}",
+            .{
+                rl.getFPS(),
+                renderer.thread_count,
+                s.drawn,
+                s.lod[0],
+                s.lod[1],
+                s.lod[2],
+                s.lod[3],
+                s.bodies_culled,
+                time_scale,
+                @as([]const u8, if (paused) " (pausa)" else ""),
+            },
         ) catch "Space Travel";
         rl.setWindowTitle(title);
     }

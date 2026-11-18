@@ -18,6 +18,7 @@ fn hash(a: u32, b: u32, c: u32, seed: u32) f32 {
     return @as(f32, @floatFromInt(h & 0xffffff)) / 16777215.0;
 }
 
+// dirección de un texel del cubemap (caras: +X, -X, +Y, -Y, +Z, -Z)
 fn faceDir(face: usize, uc: f32, vc: f32) Vector3 {
     return switch (face) {
         0 => .{ .x = 1, .y = -vc, .z = -uc },
@@ -131,6 +132,11 @@ pub const Skybox = struct {
     }
 
     pub fn draw(self: *const Skybox, fb: *Framebuffer, camera: *const Camera, aspect: f32) void {
+        self.drawRows(fb, camera, aspect, 0, fb.height);
+    }
+
+    // dibuja las filas [y0, y1)
+    pub fn drawRows(self: *const Skybox, fb: *Framebuffer, camera: *const Camera, aspect: f32, y0: i32, y1: i32) void {
         const forward = camera.forward();
         const right = camera.right();
         const up = right.crossProduct(forward);
@@ -139,6 +145,7 @@ pub const Skybox = struct {
         const w: f32 = @floatFromInt(fb.width);
         const h: f32 = @floatFromInt(fb.height);
 
+        // la dirección es lineal en coordenadas de pantalla
         const step_x = right.scale(2.0 / w * th * aspect);
         const step_y = up.scale(-2.0 / h * th);
         const origin = forward
@@ -146,10 +153,11 @@ pub const Skybox = struct {
             .add(up.scale((1.0 - 1.0 / h) * th));
 
         const width: usize = @intCast(fb.width);
-        const height: usize = @intCast(fb.height);
+        const first: usize = @intCast(y0);
+        const last: usize = @intCast(y1);
 
-        var row = origin;
-        for (0..height) |y| {
+        var row = origin.add(step_y.scale(@floatFromInt(y0)));
+        for (first..last) |y| {
             var d = row;
             for (0..width) |x| {
                 fb.color[y * width + x] = self.sample(d);

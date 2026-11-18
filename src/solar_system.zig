@@ -5,6 +5,7 @@ const render = @import("render.zig");
 const shaders = @import("shaders.zig");
 const Framebuffer = @import("framebuffer.zig").Framebuffer;
 const Texture = @import("texture.zig").Texture;
+const Camera = @import("camera.zig").Camera;
 
 const Mat4 = math.Mat4;
 const Vector3 = rl.Vector3;
@@ -152,7 +153,10 @@ pub const SolarSystem = struct {
             self.textures[i] = try loadTexture(allocator, body.texture_path);
             loaded += 1;
             if (body.texture2_path) |path2| {
-                self.textures2[i] = try loadTexture(allocator, path2);
+                self.textures2[i] = Texture.load(allocator, path2) catch blk: {
+                    std.debug.print("Aviso: no se encontró {s}, se continúa sin ella\n", .{path2});
+                    break :blk null;
+                };
             }
         }
 
@@ -216,36 +220,58 @@ pub const SolarSystem = struct {
         );
     }
 
+    // nivel de detalle según el tamaño en pantalla
+    fn lodLevel(screen_radius: f32) usize {
+        if (screen_radius < 12) return 0;
+        if (screen_radius < 50) return 1;
+        if (screen_radius < 160) return 2;
+        return 3;
+    }
+
     pub fn draw(
         self: *const SolarSystem,
-        fb: *Framebuffer,
-        sphere: render.Mesh,
+        renderer: *render.Renderer,
+        fb: *const Framebuffer,
+        lods: []const render.Mesh,
         ring: render.Mesh,
+        camera: *const Camera,
+        aspect: f32,
         view_proj: Mat4,
         uniforms: *const shaders.Uniforms,
-        stats: *render.Stats,
-    ) void {
+    ) !void {
+        const screen_h: f32 = @floatFromInt(fb.height);
+
         // opacos
         for (self.bodies, 0..) |body, i| {
+            if (!camera.sphereVisible(body.position, body.radius * 1.2, aspect)) {
+                renderer.stats.bodies_culled += 1;
+                continue;
+            }
+
+            const level = @min(lodLevel(camera.screenRadius(body.position, body.radius, screen_h)), lods.len - 1);
+            renderer.stats.lod[level] += 1;
+
             const mat = shaders.Material{
                 .texture = &self.textures[i],
                 .texture2 = if (self.textures2[i]) |*tex2| tex2 else null,
                 .shader = body.shader,
                 .vertex = body.vertex,
             };
-            render.drawMesh(fb, sphere, modelMatrix(body), view_proj, &mat, uniforms, stats);
+            try renderer.submit(fb, lods[level], modelMatrix(body), view_proj, mat, uniforms);
         }
 
         // transparentes
         for (self.bodies, 0..) |body, i| {
             if (!body.has_ring) continue;
+            if (!camera.sphereVisible(body.position, body.radius * 2.5, aspect)) continue;
+
             const mat = shaders.Material{
                 .texture = &self.textures[i],
                 .shader = &shaders.saturnRing,
                 .transparent = true,
                 .double_sided = true,
             };
-            render.drawMesh(fb, ring, ringMatrix(body), view_proj, &mat, uniforms, stats);
+            try renderer.submit(fb, ring, ringMatrix(body), view_proj, mat, uniforms);
         }
     }
 };
