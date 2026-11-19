@@ -9,6 +9,7 @@ const SolarSystem = @import("solar_system.zig").SolarSystem;
 const Camera = @import("camera.zig").Camera;
 const Skybox = @import("skybox.zig").Skybox;
 const Ship = @import("ship.zig").Ship;
+const collision = @import("collision.zig");
 const Mat4 = math.Mat4;
 
 const windowWidth = 800;
@@ -90,6 +91,7 @@ pub fn main(init: std.process.Init) !void {
 
         uniforms.time += dt;
         system.update(sim_time);
+        const collided = collision.resolve(&camera, &system, &ship);
         uniforms.light_pos = system.sunPosition();
         uniforms.camera_pos = camera.position;
 
@@ -108,7 +110,7 @@ pub fn main(init: std.process.Init) !void {
         const s = renderer.stats;
         const title = std.fmt.bufPrintZ(
             &title_buf,
-            "Space Travel - {d} FPS - hilos: {d} - tris: {d} - LOD: {d}/{d}/{d}/{d} - fuera de vista: {d} - tiempo x{d}{s}",
+            "Space Travel - {d} FPS - hilos: {d} - tris: {d} - LOD: {d}/{d}/{d}/{d} - fuera de vista: {d} - tiempo x{d}{s}{s}",
             .{
                 rl.getFPS(),
                 renderer.thread_count,
@@ -120,6 +122,7 @@ pub fn main(init: std.process.Init) !void {
                 s.bodies_culled,
                 time_scale,
                 @as([]const u8, if (paused) " (pausa)" else ""),
+                @as([]const u8, if (collided) " - COLISION" else ""),
             },
         ) catch "Space Travel";
         rl.setWindowTitle(title);

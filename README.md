@@ -50,7 +50,7 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - [x] Skybox de estrellas
 - [x] LOD
 - [x] Nave que sigue a la cámara (modelada en Blender, con caras no triangulares)
-- [ ] Colisiones con los cuerpos del sistema
+- [x] Colisiones con los cuerpos del sistema
 - [ ] Fast travel con animación
 
 ## Rendimiento
