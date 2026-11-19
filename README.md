@@ -7,7 +7,7 @@ Simulación de un sistema solar renderizada con un **software renderer** escrito
 
 ## Video
 
-[Ver video del recorrido](PENDIENTE)
+https://youtu.be/70lgT1IdikI
 
 ## Requisitos
 
@@ -102,4 +102,3 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 
 - Código generado por LLMs o tomado de internet está marcado con un comentario en el archivo correspondiente.
 - Texturas de planetas: [Solar System Scope](https://www.solarsystemscope.com/textures/), licencia [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-- Modelo de la nave: modelado por el autor en Blender (`assets/models/ship.blend`).
