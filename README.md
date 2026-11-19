@@ -33,7 +33,7 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 | Tab | Liberar / capturar el mouse |
 | P | Pausar / reanudar las órbitas |
 | ↑ / ↓ | Acelerar / desacelerar el tiempo |
-| 1 – 9 | Viajar rápido a un cuerpo celeste |
+| 1 – 7 | Viajar rápido: Sol, Mercurio, Tierra, Luna, Marte, Júpiter, Saturno |
 | Esc | Salir |
 
 ## Funcionalidades
@@ -51,7 +51,7 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - [x] LOD
 - [x] Nave que sigue a la cámara (modelada en Blender, con caras no triangulares)
 - [x] Colisiones con los cuerpos del sistema
-- [ ] Fast travel con animación
+- [x] Fast travel con animación
 
 ## Rendimiento
 
@@ -65,6 +65,12 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - Modelada en Blender (`assets/models/ship.blend`) y exportada a `assets/models/ship.obj` **sin triangular**.
 - El cargador OBJ propio (`src/obj.zig`) acepta caras de cualquier número de vértices y las triangula en abanico, y lee los colores de los materiales del `.mtl`.
 - La nave sigue a la cámara en tercera persona, orientada según hacia dónde mira, y se inclina al moverse de lado.
+
+## Viaje rápido
+
+- Con las teclas 1 a 7 la cámara viaja al cuerpo elegido y llega del lado iluminado, a una distancia segura.
+- La trayectoria es una curva que sube sobre el plano de las órbitas y sigue al cuerpo mientras se mueve.
+- **Efecto de salto:** durante el viaje se abre el FOV, la imagen se estira hacia el centro con un desenfoque radial y toma un tinte azul.
 
 ## Shaders por cuerpo celeste
 

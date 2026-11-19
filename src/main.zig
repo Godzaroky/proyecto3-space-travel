@@ -6,14 +6,20 @@ const render = @import("render.zig");
 const mesh = @import("mesh.zig");
 const shaders = @import("shaders.zig");
 const SolarSystem = @import("solar_system.zig").SolarSystem;
+const body_count = @import("solar_system.zig").body_count;
 const Camera = @import("camera.zig").Camera;
 const Skybox = @import("skybox.zig").Skybox;
 const Ship = @import("ship.zig").Ship;
 const collision = @import("collision.zig");
+const Travel = @import("travel.zig").Travel;
+const PostFx = @import("postfx.zig").PostFx;
 const Mat4 = math.Mat4;
 
 const windowWidth = 800;
 const windowHeight = 600;
+
+// teclas de viaje rápido, en el mismo orden que los cuerpos
+const travel_keys = [_]rl.KeyboardKey{ .one, .two, .three, .four, .five, .six, .seven, .eight, .nine };
 
 // resoluciones de la esfera para cada nivel de LOD
 const lod_resolutions = [_][2]u32{
@@ -58,6 +64,10 @@ pub fn main(init: std.process.Init) !void {
     var ship = try Ship.init(gpa, io, "assets/models/ship.obj");
     defer ship.deinit(gpa);
 
+    var postfx = try PostFx.init(gpa, &fb);
+    defer postfx.deinit(gpa);
+    var travel = Travel{};
+
     var uniforms = shaders.Uniforms{
         .light_pos = system.sunPosition(),
         .light_color = .{ .x = 1, .y = 1, .z = 1 },
@@ -76,12 +86,10 @@ pub fn main(init: std.process.Init) !void {
     var sim_time: f32 = 0;
     var time_scale: f32 = 1;
     var paused = false;
-    var title_buf: [256]u8 = undefined;
+    var title_buf: [320]u8 = undefined;
 
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
-        camera.update(dt);
-        ship.update(dt);
 
         // control del tiempo
         if (rl.isKeyPressed(.p)) paused = !paused;
@@ -91,6 +99,18 @@ pub fn main(init: std.process.Init) !void {
 
         uniforms.time += dt;
         system.update(sim_time);
+
+        // viaje rápido
+        for (travel_keys, 0..) |key, i| {
+            if (i < body_count and rl.isKeyPressed(key)) travel.start(&camera, &system, i);
+        }
+        if (travel.active) {
+            travel.update(&camera, &system, dt);
+        } else {
+            camera.update(dt);
+        }
+        ship.update(dt);
+
         const collided = collision.resolve(&camera, &system, &ship);
         uniforms.light_pos = system.sunPosition();
         uniforms.camera_pos = camera.position;
@@ -104,13 +124,14 @@ pub fn main(init: std.process.Init) !void {
         try ship.draw(&renderer, &fb, camera, view_proj, &uniforms);
         try system.drawTransparent(&renderer, &fb, ring, &camera, aspect, view_proj, &uniforms);
         renderer.flush(&fb, &uniforms, .{ .skybox = &skybox, .camera = &camera, .aspect = aspect });
+        postfx.warp(&fb, travel.warp(), renderer.thread_count);
 
         fb.present();
 
         const s = renderer.stats;
         const title = std.fmt.bufPrintZ(
             &title_buf,
-            "Space Travel - {d} FPS - hilos: {d} - tris: {d} - LOD: {d}/{d}/{d}/{d} - fuera de vista: {d} - tiempo x{d}{s}{s}",
+            "Space Travel - {d} FPS - hilos: {d} - tris: {d} - LOD: {d}/{d}/{d}/{d} - fuera de vista: {d} - tiempo x{d}{s}{s}{s}{s}",
             .{
                 rl.getFPS(),
                 renderer.thread_count,
@@ -123,6 +144,8 @@ pub fn main(init: std.process.Init) !void {
                 time_scale,
                 @as([]const u8, if (paused) " (pausa)" else ""),
                 @as([]const u8, if (collided) " - COLISION" else ""),
+                @as([]const u8, if (travel.active) " - viajando a " else ""),
+                if (travel.active) system.bodies[travel.target].name else "",
             },
         ) catch "Space Travel";
         rl.setWindowTitle(title);
