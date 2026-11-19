@@ -1,3 +1,4 @@
+// Generado con asistencia de IA (Claude)
 const rl = @import("raylib");
 const std = @import("std");
 
@@ -40,6 +41,17 @@ pub const Texture = struct {
         return .{
             .width = size,
             .height = size,
+            .pixels = pixels,
+        };
+    }
+
+    // textura de 1x1 de un solo color
+    pub fn solid(allocator: std.mem.Allocator, color: rl.Color) !Texture {
+        const pixels = try allocator.alloc(rl.Color, 1);
+        pixels[0] = color;
+        return .{
+            .width = 1,
+            .height = 1,
             .pixels = pixels,
         };
     }

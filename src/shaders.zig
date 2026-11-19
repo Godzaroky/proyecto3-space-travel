@@ -9,6 +9,7 @@ pub const Fragment = struct {
     world_pos: Vector3,
     normal: Vector3,
     uv: rl.Vector2,
+    color: Vector3,
 };
 
 pub const Uniforms = struct {
@@ -210,4 +211,23 @@ pub fn saturnRing(frag: Fragment, mat: *const Material, u: *const Uniforms) rl.C
     const base = Vector3{ .x = 0.85, .y = 0.75, .z = 0.6 };
     const light = @abs(frag.normal.dotProduct(lightDir(frag, u))) * 0.8 + 0.2;
     return vec3ToColorAlpha(base.scale(light * (0.7 + 0.3 * bands)), alpha);
+}
+
+// nave: color del material con brillo especular
+pub fn ship(frag: Fragment, mat: *const Material, u: *const Uniforms) rl.Color {
+    const albedo = frag.color.multiply(sampleVec3(mat.texture, frag.uv));
+    const l = lightDir(frag, u);
+    const v = viewDir(frag, u);
+    const diff = @max(frag.normal.dotProduct(l), 0);
+
+    const h = l.add(v).normalize();
+    const spec = std.math.pow(f32, @max(frag.normal.dotProduct(h), 0), 32) * 0.6;
+
+    const facing = @max(frag.normal.dotProduct(v), 0);
+    const rim = std.math.pow(f32, 1 - facing, 4) * 0.15;
+
+    // la nave usa más luz ambiental para que se vea aunque el sol quede detrás
+    const base = albedo.multiply(splat(0.25).add(u.light_color.scale(diff)));
+    const lit = base.add(u.light_color.scale(spec * diff)).add(splat(rim));
+    return vec3ToColor(lit);
 }

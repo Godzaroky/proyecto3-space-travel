@@ -8,6 +8,7 @@ const shaders = @import("shaders.zig");
 const SolarSystem = @import("solar_system.zig").SolarSystem;
 const Camera = @import("camera.zig").Camera;
 const Skybox = @import("skybox.zig").Skybox;
+const Ship = @import("ship.zig").Ship;
 const Mat4 = math.Mat4;
 
 const windowWidth = 800;
@@ -24,6 +25,7 @@ const lod_resolutions = [_][2]u32{
 // escena del sistema solar (generada con asistencia de IA)
 pub fn main(init: std.process.Init) !void {
     const gpa = init.gpa;
+    const io = init.io;
 
     rl.initWindow(windowWidth, windowHeight, "Space Travel");
     defer rl.closeWindow();
@@ -52,6 +54,9 @@ pub fn main(init: std.process.Init) !void {
     var renderer = render.Renderer.init(gpa);
     defer renderer.deinit();
 
+    var ship = try Ship.init(gpa, io, "assets/models/ship.obj");
+    defer ship.deinit(gpa);
+
     var uniforms = shaders.Uniforms{
         .light_pos = system.sunPosition(),
         .light_color = .{ .x = 1, .y = 1, .z = 1 },
@@ -75,6 +80,7 @@ pub fn main(init: std.process.Init) !void {
     while (!rl.windowShouldClose()) {
         const dt = rl.getFrameTime();
         camera.update(dt);
+        ship.update(dt);
 
         // control del tiempo
         if (rl.isKeyPressed(.p)) paused = !paused;
@@ -92,7 +98,9 @@ pub fn main(init: std.process.Init) !void {
         fb.clear(rl.Color.black);
 
         renderer.begin();
-        try system.draw(&renderer, &fb, &lods, ring, &camera, aspect, view_proj, &uniforms);
+        try system.drawOpaque(&renderer, &fb, &lods, &camera, aspect, view_proj, &uniforms);
+        try ship.draw(&renderer, &fb, camera, view_proj, &uniforms);
+        try system.drawTransparent(&renderer, &fb, ring, &camera, aspect, view_proj, &uniforms);
         renderer.flush(&fb, &uniforms, .{ .skybox = &skybox, .camera = &camera, .aspect = aspect });
 
         fb.present();

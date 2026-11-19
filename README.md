@@ -49,7 +49,7 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - [x] Shaders únicos por cuerpo celeste
 - [x] Skybox de estrellas
 - [x] LOD
-- [ ] Nave que sigue a la cámara (modelada en Blender, con caras no triangulares)
+- [x] Nave que sigue a la cámara (modelada en Blender, con caras no triangulares)
 - [ ] Colisiones con los cuerpos del sistema
 - [ ] Fast travel con animación
 
@@ -59,6 +59,12 @@ Se recomienda compilar siempre en `ReleaseFast`, porque en modo Debug el rendere
 - **Frustum culling:** los cuerpos fuera del campo de visión se descartan antes de procesar sus triángulos.
 - **Back-face culling** y **early-z:** los triángulos de espaldas y los pixeles tapados no llegan al shader.
 - **Rasterización en paralelo:** la pantalla se divide en franjas de 8 filas intercaladas entre todos los núcleos del CPU.
+
+## Nave
+
+- Modelada en Blender (`assets/models/ship.blend`) y exportada a `assets/models/ship.obj` **sin triangular**.
+- El cargador OBJ propio (`src/obj.zig`) acepta caras de cualquier número de vértices y las triangula en abanico, y lee los colores de los materiales del `.mtl`.
+- La nave sigue a la cámara en tercera persona, orientada según hacia dónde mira, y se inclina al moverse de lado.
 
 ## Shaders por cuerpo celeste
 

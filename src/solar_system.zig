@@ -33,6 +33,7 @@ pub const Body = struct {
     spin: f32 = 0,
 };
 
+// los padres van antes que sus hijos
 const body_defs = [_]Body{
     .{
         .name = "Sol",
@@ -228,12 +229,11 @@ pub const SolarSystem = struct {
         return 3;
     }
 
-    pub fn draw(
+    pub fn drawOpaque(
         self: *const SolarSystem,
         renderer: *render.Renderer,
         fb: *const Framebuffer,
         lods: []const render.Mesh,
-        ring: render.Mesh,
         camera: *const Camera,
         aspect: f32,
         view_proj: Mat4,
@@ -241,7 +241,6 @@ pub const SolarSystem = struct {
     ) !void {
         const screen_h: f32 = @floatFromInt(fb.height);
 
-        // opacos
         for (self.bodies, 0..) |body, i| {
             if (!camera.sphereVisible(body.position, body.radius * 1.2, aspect)) {
                 renderer.stats.bodies_culled += 1;
@@ -259,8 +258,19 @@ pub const SolarSystem = struct {
             };
             try renderer.submit(fb, lods[level], modelMatrix(body), view_proj, mat, uniforms);
         }
+    }
 
-        // transparentes
+    // se dibuja después de todo lo opaco
+    pub fn drawTransparent(
+        self: *const SolarSystem,
+        renderer: *render.Renderer,
+        fb: *const Framebuffer,
+        ring: render.Mesh,
+        camera: *const Camera,
+        aspect: f32,
+        view_proj: Mat4,
+        uniforms: *const shaders.Uniforms,
+    ) !void {
         for (self.bodies, 0..) |body, i| {
             if (!body.has_ring) continue;
             if (!camera.sphereVisible(body.position, body.radius * 2.5, aspect)) continue;

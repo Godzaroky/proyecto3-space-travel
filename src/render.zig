@@ -32,12 +32,14 @@ pub const Varyings = struct {
     world_pos: Vector3,
     normal: Vector3,
     uv: rl.Vector2,
+    color: Vector3,
 
     pub fn scale(self: Varyings, f: f32) Varyings {
         return .{
             .world_pos = self.world_pos.scale(f),
             .normal = self.normal.scale(f),
             .uv = self.uv.scale(f),
+            .color = self.color.scale(f),
         };
     }
 
@@ -46,6 +48,7 @@ pub const Varyings = struct {
             .world_pos = self.world_pos.add(o.world_pos),
             .normal = self.normal.add(o.normal),
             .uv = self.uv.add(o.uv),
+            .color = self.color.add(o.color),
         };
     }
 
@@ -54,6 +57,7 @@ pub const Varyings = struct {
             .world_pos = self.world_pos.lerp(o.world_pos, t),
             .normal = self.normal.lerp(o.normal, t),
             .uv = self.uv.lerp(o.uv, t),
+            .color = self.color.lerp(o.color, t),
         };
     }
 };
@@ -235,6 +239,7 @@ fn rasterRows(fb: *Framebuffer, tri: *const Triangle, bb: Bounds, y0: i32, y1: i
                 .world_pos = v.world_pos,
                 .normal = v.normal.normalize(),
                 .uv = v.uv,
+                .color = v.color,
             };
 
             const color = mat.shader(frag, mat, u);
@@ -342,6 +347,7 @@ pub const Renderer = struct {
                         .world_pos = .{ .x = world.x, .y = world.y, .z = world.z },
                         .normal = (Vector3{ .x = world_n.x, .y = world_n.y, .z = world_n.z }).normalize(),
                         .uv = mesh.uvs[idx],
+                        .color = mesh.colors[idx],
                     },
                 };
             }
@@ -385,6 +391,7 @@ pub const Renderer = struct {
 
         worker(&job, 0);
 
+        // si un hilo no se pudo crear, su parte se hace aquí
         for (1..self.thread_count) |t| {
             if (threads[t]) |thread| thread.join() else worker(&job, t);
         }
